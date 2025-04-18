@@ -3,18 +3,27 @@ from diffusers import StableDiffusionPipeline
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
 import torch
 from utils.image_generator import generate_image
-from utils.music_generator import generate_music  
+from utils.music_generator import generate_music
 from utils.ui_config import apply_custom_css
-from refiner_agent import refine_prompt_with_feedback  # Importing refine function
-from ai_agent import ai_agent  # Re-adding AI Agent import
+from ai_agent import ai_agent
+from refiner_agent import refine_prompt
+
+# ---- PAGE CONFIG ----
+st.set_page_config(page_title="AI Generator", layout="wide")
+apply_custom_css()
 
 # ---- SESSION STATE INIT ----
-for key in ["show_sidebar", "prompt", "prompt_history", "generated_image", "generated_music", "refined_prompt", "refined_prompt_updated"]:
+for key in ["show_sidebar", "prompt", "prompt_history", "generated_image", "generated_music", "refined_prompt", "show_keyword_input", "refine_keywords"]:
     if key not in st.session_state:
-        st.session_state[key] = False if key == "show_sidebar" else [] if key == "prompt_history" else "" if key == "prompt" else None
+        if key in ["show_sidebar", "show_keyword_input"]:
+            st.session_state[key] = False
+        elif key == "prompt_history":
+            st.session_state[key] = []
+        else:
+            st.session_state[key] = ""
 
 # ---- SIDEBAR TOGGLE ----
-if st.button("\u2630 Menu"):
+if st.button("\u2630 Menu", key="menu_button"):
     st.session_state.show_sidebar = not st.session_state.show_sidebar
 
 if st.session_state.show_sidebar:
@@ -39,78 +48,78 @@ def load_models():
 
 sd_model, music_model, processor, device = load_models()
 
-# ---- MAIN CONTENT ----
+# ---- MAIN UI ----
 st.title("🎨 AI Image & 🎵 Music Generator")
 
-# Prompt input box where the refined prompt will be displayed after refinement
-if "refined_prompt" in st.session_state and st.session_state.refined_prompt:
-    prompt = st.text_area("Enter your prompt:", st.session_state.refined_prompt, height=150)
-else:
-    prompt = st.text_area("Enter your prompt:", st.session_state.prompt, height=150)
+# Input Prompt Area
+prompt = st.text_area("Enter your prompt:", st.session_state.get("prompt", ""), height=150, key="prompt_input_box")
 
-description_type = st.selectbox("Choose description length:", ["short", "medium", "long"])
+# Image Size
+size = st.radio("Image Size:", ["Small", "Medium", "Large"], key="size_radio")
+size_map = {"Small": (256, 256), "Medium": (384, 384), "Large": (512, 512)}
+img_size = size_map[size]
 
-# Collect feedback for refinement
-feedback = {}
+# Description Type
+st.session_state.description_type = st.selectbox("Description Length:", ["short", "medium", "long"], key="description_select")
 
-color = st.radio("Do you want to specify the color?", ["No", "Yes"])
-if color == "Yes":
-    feedback["color"] = st.text_input("Enter the desired color:")
+# --- Refine Prompt ---
+if st.button("🔁 Refine Prompt", key="refine_button_main"):
+    st.session_state.show_keyword_input = not st.session_state.show_keyword_input
 
-size = st.radio("Do you want to specify the size?", ["No", "Yes"])
-if size == "Yes":
-    feedback["size"] = st.text_input("Enter the desired size:")
+# Keyword Input Box
+if st.session_state.show_keyword_input:
+    st.session_state.refine_keywords = st.text_input("Enter keywords (comma-separated):", key="keyword_input_box")
+    if st.button("✅ Generate Refined Prompt", key="generate_refined_prompt_button"):
+        if not st.session_state.prompt or not st.session_state.prompt.strip():
+            st.warning("Please write something in the main prompt before refining.")
+        else:
+            refined = refine_prompt(
+                original_prompt=st.session_state.prompt,
+                keywords=st.session_state.refine_keywords,
+                max_length={"short": 30, "medium": 60, "long": 100}[st.session_state.description_type]
+            )
+            st.session_state.prompt = refined
+            st.session_state.refined_prompt = refined
+            st.session_state.show_keyword_input = False
+            st.success("Prompt refined using your keywords!")
+      
+# Save prompt in history
+if st.session_state.prompt and (
+    len(st.session_state.prompt_history) == 0 or st.session_state.prompt_history[-1] != st.session_state.prompt
+):
+    st.session_state.prompt_history.append(st.session_state.prompt)
 
-shape = st.radio("Do you want to specify the shape?", ["No", "Yes"])
-if shape == "Yes":
-    feedback["shape"] = st.text_input("Enter the desired shape:")
-
-texture = st.radio("Do you want to specify the texture?", ["No", "Yes"])
-if texture == "Yes":
-    feedback["texture"] = st.text_input("Enter the desired texture:")
-
-material = st.radio("Do you want to specify the material?", ["No", "Yes"])
-if material == "Yes":
-    feedback["material"] = st.text_input("Enter the desired material:")
-
-# Refine the prompt based on feedback, only if it hasn't been updated already
-if st.button("Refine Prompt"):
-    if prompt and not st.session_state.refined_prompt_updated:  # Check if prompt hasn't been updated yet
-        refined_prompt = refine_prompt_with_feedback(prompt, feedback, description_type)
-        st.session_state.refined_prompt = refined_prompt  # Store the refined prompt
-        st.session_state.refined_prompt_updated = True  # Mark as updated
-    elif st.session_state.refined_prompt_updated:
-        st.warning("Prompt has already been refined!")
-    else:
-        st.warning("Please enter a prompt first!")
-
-# ---- GENERATE BUTTONS ----
-if st.button("Generate Image"):
-    if prompt:
-        st.session_state.generated_image = generate_image(st.session_state.refined_prompt, sd_model)
+# --- GENERATE IMAGE ---
+if st.button("🎨 Generate Image", key="generate_image_button"):
+    if st.session_state.prompt:
+        st.session_state.generated_image = generate_image(st.session_state.prompt, sd_model, img_size)
         st.success("Image generated successfully!")
     else:
-        st.warning("Please enter a prompt first!")
+        st.warning("Please enter a prompt!")
 
-if st.button("Generate Music"):
-    if prompt:
-        st.session_state.generated_music = generate_music(st.session_state.refined_prompt, music_model, processor)
+# --- GENERATE MUSIC ---
+if st.button("🎵 Generate Music", key="generate_music_button"):
+    if st.session_state.prompt:
+        st.session_state.generated_music = generate_music(st.session_state.prompt, music_model, processor)
         st.success("Music generated successfully!")
     else:
-        st.warning("Please enter a prompt first!")
+        st.warning("Please enter a prompt!")
 
-if st.button("🎯 Let AI Agent Decide"):
-    if prompt:
+# --- AI AGENT BUTTON ---
+if st.button("🤖 Let AI Agent Decide", key="ai_agent_button"):
+    if st.session_state.prompt:
         with st.spinner("AI Agent is thinking..."):
-            result = ai_agent(st.session_state.refined_prompt, sd_model, music_model, processor, device)
+            result = ai_agent(
+                st.session_state.prompt, sd_model, music_model, processor, device, img_size
+            )
             for msg in result["messages"]:
                 st.markdown(f"> {msg}")
             st.session_state.generated_image = result.get("image")
             st.session_state.generated_music = result.get("music")
     else:
-        st.warning("Please enter a prompt first!")
+        st.warning("Please enter a prompt!")
 
-# ---- OUTPUTS ----
+# --- OUTPUT DISPLAY ---
 if st.session_state.generated_image:
     st.image(st.session_state.generated_image, caption="Generated Image")
 
