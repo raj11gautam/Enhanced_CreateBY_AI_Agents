@@ -69,5 +69,20 @@ def apply_custom_css():
             .stDownloadButton {
                 margin-top: 10px;
             }
+                
+            /* Transparent Download Button */
+            button[data-baseweb="button"] {
+                background-color: rgba(255, 255, 255, 0.05);
+                border: 1px solid #ccc;
+                padding: 6px 12px;
+                border-radius: 8px;
+                color: #fff;
+                transition: all 0.3s ease-in-out;
+            }
+            button[data-baseweb="button"]:hover {
+                background-color: rgba(255, 255, 255, 0.15);
+                border-color: #fff;
+            }
+
         </style>
     """, unsafe_allow_html=True)
