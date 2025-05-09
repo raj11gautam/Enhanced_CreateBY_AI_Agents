@@ -1,0 +1,8 @@
+torch
+torchaudio
+transformers
+accelerate
+diffusers
+streamlit
+scipy
+numpy
